@@ -41,15 +41,17 @@
 --------------------
 1. 仓库 cwx2026/mypage，Pages 设置选择：
    Source = Deploy from a branch，Branch = main，目录 = /docs。
-2. 站点地址为 https://cwx2026.github.io/mypage/
+2. 站点地址：https://20051023.xyz/（已绑定自定义域名；
+   build.php 的 SITE_URL 与 CUSTOM_DOMAIN 均已配置，
+   构建时会自动生成 docs/CNAME）。
 3. 评论功能使用 giscus（GitHub Discussions 驱动）：
    - 在仓库 Settings 里开启 Discussions；
    - 安装 giscus app 并授权本仓库；
    - 打开 https://giscus.app 按提示配置，把生成的 repoId /
      categoryId 填到 build.php 顶部的 GISCUS_REPO_ID /
      GISCUS_CATEGORY_ID，重新 php build.php 并推送。
-4. 若绑定了自定义域名，把 build.php 里的 SITE_URL 改为
-   你的域名（末尾带 /），重新构建推送即可。
+4. 若要更换域名，改 build.php 里的 SITE_URL 和
+   CUSTOM_DOMAIN 两个常量（末尾带 /），重新构建推送即可。
 
 目录结构
 --------

@@ -17,7 +17,10 @@
 /* ================= 配置 ================= */
 
 /** 站点根地址（末尾带 /）。部署在 GitHub Pages 子路径时必填。 */
-define('SITE_URL', 'https://cwx2026.github.io/mypage/');
+define('SITE_URL', 'https://20051023.xyz/');
+
+/** 自定义域名（无则留空）。设置后会在 docs/CNAME 写入该域名，供 GitHub Pages 识别。 */
+define('CUSTOM_DOMAIN', '20051023.xyz');
 
 /** 输出目录（即推送到 GitHub Pages 的目录） */
 define('OUT_DIR', __DIR__ . '/docs');
@@ -344,6 +347,12 @@ $photos = array_values(array_filter($posts, function ($p) {
 }));
 file_put_contents(OUT_DIR . '/gallery.html', render_gallery_page($photos, $siteName, $siteDesc));
 echo "  生成 gallery.html\n";
+
+// 6. 自定义域名文件（GitHub Pages 据此识别自定义域名，重建时保留）
+if (CUSTOM_DOMAIN !== '') {
+    file_put_contents(OUT_DIR . '/CNAME', CUSTOM_DOMAIN);
+    echo "  生成 CNAME（" . CUSTOM_DOMAIN . "）\n";
+}
 
 echo "\n构建完成：docs/ 已更新（" . count($posts) . " 条内容）。\n";
 echo '推送：git add docs && git commit -m "更新内容" && git push' . "\n";
