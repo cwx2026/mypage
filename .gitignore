@@ -1,0 +1,16 @@
+# ===== 敏感数据：禁止进仓库（仓库是公开的）=====
+# 管理员账号哈希，只存在本地
+data/admin.json
+
+# 站点内容数据（posts/comments/likes/settings）只存本地，
+# 线上展示的是 build.php 生成的静态文件
+data/*.json
+
+# ===== 本地上传原图 =====
+# 构建时会把 uploads/ 复制进 docs/uploads/，docs 会提交
+/uploads/
+
+# ===== 系统 / 编辑器 =====
+*.log
+Thumbs.db
+.DS_Store
