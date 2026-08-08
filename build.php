@@ -17,10 +17,10 @@
 /* ================= 配置 ================= */
 
 /** 站点根地址（末尾带 /）。部署在 GitHub Pages 子路径时必填。 */
-define('SITE_URL', 'https://cwx2026.github.io/mypage/');
+define('SITE_URL', 'https://www.20051023.xyz/');
 
 /** 自定义域名（留空 = 不绑定，用上面的默认地址；绑定后会在 docs/CNAME 写入该域名）。 */
-define('CUSTOM_DOMAIN', '');
+define('CUSTOM_DOMAIN', 'www.20051023.xyz');
 
 /** 输出目录（即推送到 GitHub Pages 的目录） */
 define('OUT_DIR', __DIR__ . '/docs');
