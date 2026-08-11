@@ -237,6 +237,20 @@ if ($Test) {
   exit 0
 }
 
+# ---------- 单实例：防止重复启动 ----------
+$script:singleMutex = New-Object System.Threading.Mutex($false, 'BlogTray_20051023_SingleInstance')
+try { $script:mutexHeld = $script:singleMutex.WaitOne(0, $false) }
+catch { $script:mutexHeld = $true }   # 上次异常退出遗留的互斥锁 → 视为可接管
+$script:signalEvent = $null
+if (-not $script:mutexHeld) {
+  # 已有实例在运行：发出信号让原实例弹提示，然后本实例静默退出
+  Write-Log '检测到博客管家已在运行，通知原实例后退出'
+  try { (New-Object System.Threading.EventWaitHandle($false, 'AutoReset', 'BlogTray_20051023_Signal')).Set() } catch {}
+  exit 0
+}
+# 创建信号事件：重复启动的实例会 Set 它，本实例定时器检测到后弹提示
+$script:signalEvent = New-Object System.Threading.EventWaitHandle($false, 'AutoReset', 'BlogTray_20051023_Signal')
+
 # ---------- 托盘界面 ----------
 $script:notifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $script:notifyIcon.Text = '博客管家'
@@ -301,6 +315,10 @@ $watcher.add_Renamed({ On-DataChange })
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 1500
 $timer.add_Tick({
+  # 收到「重复启动」信号 → 提示已在运行
+  if ($script:signalEvent -and $script:signalEvent.WaitOne(0)) {
+    Show-Tip '博客管家已在运行。'
+  }
   if ($script:dataDirty) {
     $elapsed = ((Get-Date) - $script:dataDirtyAt).TotalSeconds
     if ($elapsed -ge 3) {
@@ -331,5 +349,10 @@ try {
   $timer.Dispose()
   Stop-PhpServer
   try { $script:notifyIcon.Visible = $false; $script:notifyIcon.Dispose() } catch {}
+  if ($script:singleMutex) {
+    try { if ($script:mutexHeld) { $script:singleMutex.ReleaseMutex() } } catch {}
+    $script:singleMutex.Dispose()
+  }
+  if ($script:signalEvent) { try { $script:signalEvent.Dispose() } catch {} }
   Write-Log '博客管家已退出。'
 }
