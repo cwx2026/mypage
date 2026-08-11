@@ -35,6 +35,7 @@ function Load-Config {
     port      = 8000
     autoBuild = $true
     autoPush  = $false
+    gitPath   = ''   # 空则用系统 PATH 里的 git；目标机安装包填便携版 git.exe
   }
   if (Test-Path -LiteralPath $script:ConfigPath) {
     try {
@@ -150,7 +151,9 @@ function Invoke-Build {
 
 function Invoke-Git {
   param([string[]]$Arguments)
-  return Invoke-Run -Exe 'git' -Arguments $Arguments -WorkDir $script:Cfg.siteDir
+  $git = $script:Cfg.gitPath
+  if ([string]::IsNullOrWhiteSpace($git)) { $git = 'git' }
+  return Invoke-Run -Exe $git -Arguments $Arguments -WorkDir $script:Cfg.siteDir
 }
 
 function Invoke-Publish {
@@ -163,9 +166,9 @@ function Invoke-Publish {
     Show-Tip '构建失败，未发布' ([System.Windows.Forms.ToolTipIcon]::Error)
     return
   }
-  # 2) 是否真的有内容改动
+  # 2) 是否真的有内容改动（内容数据 + 原图 + docs 都会体现）
   $st = Invoke-Git -Arguments @('status', '--porcelain')
-  if ($st.StdOut -notmatch 'docs/') {
+  if (-not $st.StdOut.Trim()) {
     Show-Tip '没有需要发布的改动'
     return
   }
@@ -175,8 +178,8 @@ function Invoke-Publish {
     Invoke-Git -Arguments @('config', 'credential.helper', 'manager') | Out-Null
     Write-Log '已为本仓库启用 git credential.helper=manager'
   }
-  # 4) 提交 docs
-  Invoke-Git -Arguments @('add', 'docs') | Out-Null
+  # 4) 提交全部改动（docs/ + 内容数据 + 原图）
+  Invoke-Git -Arguments @('add', '-A') | Out-Null
   $commit = Invoke-Git -Arguments @('commit', '-m', '更新内容')
   if ($commit.ExitCode -ne 0 -and $commit.StdOut -notmatch 'nothing to commit') {
     Show-Tip ("提交失败：" + (($commit.StdErr.Trim()) -replace "`r?`n", ' ')) ([System.Windows.Forms.ToolTipIcon]::Error)
@@ -190,6 +193,22 @@ function Invoke-Publish {
   } else {
     Write-Log "push 失败：$($push.StdErr.Trim())"
     Show-Tip '推送失败：若弹出 GitHub 登录窗口请先完成登录再重试「发布」；或命令行执行 git push 查看详情' ([System.Windows.Forms.ToolTipIcon]::Warning)
+  }
+}
+
+function Invoke-Pull {
+  if (-not (Test-Path -LiteralPath (Join-Path $script:Cfg.siteDir '.git'))) {
+    Show-Tip '未找到 .git 目录，不是 git 仓库' ([System.Windows.Forms.ToolTipIcon]::Error)
+    return
+  }
+  # --autostash 保护本地未提交改动；--rebase 保持线性历史
+  Show-Tip '正在从 GitHub 拉取最新…'
+  $r = Invoke-Git -Arguments @('pull', '--rebase', '--autostash')
+  if ($r.ExitCode -eq 0) {
+    Show-Tip '已同步到 GitHub 最新 ✓'
+  } else {
+    Write-Log "pull 失败：$($r.StdErr.Trim())"
+    Show-Tip ('拉取失败：' + (($r.StdErr.Trim()) -replace "`r?`n", ' ')) ([System.Windows.Forms.ToolTipIcon]::Warning)
   }
 }
 
@@ -263,6 +282,7 @@ $miSite    = New-Object System.Windows.Forms.ToolStripMenuItem('打开网站')
 $miAdmin   = New-Object System.Windows.Forms.ToolStripMenuItem('打开后台管理')
 $miBuild   = New-Object System.Windows.Forms.ToolStripMenuItem('立即构建 docs')
 $miPublish = New-Object System.Windows.Forms.ToolStripMenuItem('发布到 GitHub')
+$miPull    = New-Object System.Windows.Forms.ToolStripMenuItem('从 GitHub 拉取最新')
 $miDir     = New-Object System.Windows.Forms.ToolStripMenuItem('打开站点目录')
 $miAuto    = New-Object System.Windows.Forms.ToolStripMenuItem('开机自启')
 $miExit    = New-Object System.Windows.Forms.ToolStripMenuItem('退出')
@@ -274,6 +294,7 @@ $miBuild.Add_Click({
   else { Show-Tip '构建失败，详见 blog-tray.log' ([System.Windows.Forms.ToolTipIcon]::Error) }
 })
 $miPublish.Add_Click({ Invoke-Publish })
+$miPull.Add_Click({ Invoke-Pull })
 $miDir.Add_Click({ Start-Process 'explorer.exe' -ArgumentList $script:Cfg.siteDir })
 $miAuto.CheckOnClick = $true
 $miAuto.Checked = (Test-AutoStart)
@@ -285,6 +306,7 @@ $null = $menu.Items.Add($miAdmin)
 $null = $menu.Items.Add('-')
 $null = $menu.Items.Add($miBuild)
 $null = $menu.Items.Add($miPublish)
+$null = $menu.Items.Add($miPull)
 $null = $menu.Items.Add('-')
 $null = $menu.Items.Add($miDir)
 $null = $menu.Items.Add($miAuto)
