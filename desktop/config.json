@@ -1,7 +1,0 @@
-{
-  "phpPath": "D:/php/php.exe",
-  "siteDir": "D:/github/mypage",
-  "port": 8000,
-  "autoBuild": true,
-  "autoPush": false
-}

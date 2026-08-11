@@ -1,0 +1,24 @@
+[
+    {
+        "id": "20260808043633_2c9c71",
+        "type": "photo",
+        "title": "asdfasfd",
+        "content": "asdfasfd",
+        "format": "text",
+        "images": [
+            "uploads/20260808_043633_49aad45f.png"
+        ],
+        "created": 1786163793,
+        "updated": 1786163793
+    },
+    {
+        "id": "20260811033018_f031b0",
+        "type": "post",
+        "title": "几天天气不错！",
+        "content": "<div>我在老家，一直很热。<div><br></div><div>但今天落雨了，空气不错，很舒服！</div></div>",
+        "format": "html",
+        "images": [],
+        "created": 1786419018,
+        "updated": 1786419018
+    }
+]
