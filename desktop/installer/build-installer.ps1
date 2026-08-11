@@ -6,7 +6,7 @@
   - 得到单文件 exe：双击 → 解压到临时目录 → 运行 setup.ps1 完成安装
   优点：零外部工具、无需管理员权限、纯 PE 可执行文件。
   用法：powershell -NoProfile -ExecutionPolicy Bypass -File build-installer.ps1
-  产物：dist\博客管家安装.exe（不携带内容，安装时总从 GitHub 拉最新）
+  产物：dist\mypage.exe（不携带内容，安装时总从 GitHub 拉最新）
 #>
 param(
   [string]$PhpRoot   = 'D:/php',
@@ -18,7 +18,7 @@ $Repo    = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)   # desktop/ins
 $Stage   = Join-Path $Repo 'dist\stage'
 $Payload = Join-Path $Stage 'payload'
 $ZipPath = Join-Path $Stage 'payload.zip'
-$OutExe  = Join-Path $Repo 'dist\博客管家安装.exe'
+$OutExe  = Join-Path $Repo 'dist\mypage.exe'
 $Csc     = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 
 if (-not [System.IO.Path]::IsPathRooted($MinGitZip)) { $MinGitZip = Join-Path $Repo $MinGitZip }

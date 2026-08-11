@@ -33,7 +33,7 @@
 - 在 A 电脑写内容 → 「发布到 GitHub」→ B 电脑托盘点「从 GitHub 拉取最新」即可看到。
 - B 电脑写完内容发布 → A 电脑同样「拉取最新」即可。
 
-**完整安装包**：`dist/博客管家安装.exe`（约 35MB，自带 PHP 运行时 + 便携版 git，目标机无需预装任何软件）。把 exe 拷到新电脑双击安装：
+**完整安装包**：`dist/mypage.exe`（约 50MB，自带 PHP 运行时 + 便携版 git，目标机无需预装任何软件）。把 exe 拷到新电脑双击安装：
 
 1. 自动装到 `%LOCALAPPDATA%\博客管家`，首次自动 `git clone` 拉取最新源码 + 内容 + 静态站。
 2. 安装时填一次 GitHub 用户名 + 个人访问令牌（PAT，在 github.com/settings/tokens 生成，勾选 `repo` 权限），存入 Windows 凭据管理器，之后发布全自动。
