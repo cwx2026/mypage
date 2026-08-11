@@ -32,9 +32,10 @@ function format_time($ts) {
     return date('Y-m-d H:i', (int)$ts);
 }
 
-/** 生成摘要（截断为纯文本） */
+/** 生成摘要（截断为纯文本）：先剥掉 HTML 标签再解码实体，避免富文本摘要带标签显示成源码 */
 function excerpt($text, $len = 120) {
-    $text = trim(preg_replace('/\s+/', ' ', (string)$text));
+    $text = trim(preg_replace('/\s+/', ' ',
+        html_entity_decode(strip_tags((string)$text), ENT_QUOTES, 'UTF-8')));
     if (mb_strlen($text) <= $len) return $text;
     return mb_substr($text, 0, $len) . '…';
 }
