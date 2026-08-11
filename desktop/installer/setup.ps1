@@ -123,9 +123,97 @@ function Get-GitCreds {
   return $null
 }
 
+# ---------- 安装目录选择（默认 %LOCALAPPDATA%\博客管家，可修改） ----------
+function Get-InstallDir {
+  param([string]$Default)
+  $form = New-Object System.Windows.Forms.Form
+  $form.Text = '博客管家 - 选择安装目录'
+  $form.ClientSize = New-Object System.Drawing.Size(620, 220)
+  $form.StartPosition = 'CenterScreen'
+  $form.FormBorderStyle = 'FixedDialog'
+  $form.MaximizeBox = $false
+  $form.MinimizeBox = $false
+
+  $lbl = New-Object System.Windows.Forms.Label
+  $lbl.Text = "博客管家将安装到以下目录（可修改）。`n程序会在这里放 PHP、git 和站点内容（site\），你发布的日志都存在这个目录里。"
+  $lbl.Location = New-Object System.Drawing.Point(16, 14)
+  $lbl.Size = New-Object System.Drawing.Size(588, 56)
+
+  $txt = New-Object System.Windows.Forms.TextBox
+  $txt.Text = $Default
+  $txt.Location = New-Object System.Drawing.Point(16, 82)
+  $txt.Size = New-Object System.Drawing.Size(460, 24)
+
+  $btnBrowse = New-Object System.Windows.Forms.Button
+  $btnBrowse.Text = '浏览…'
+  $btnBrowse.Location = New-Object System.Drawing.Point(486, 80)
+  $btnBrowse.Size = New-Object System.Drawing.Size(116, 28)
+  $btnBrowse.Add_Click({
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = '选择安装目录'
+    try { $fd.SelectedPath = $txt.Text } catch {}
+    if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+      $txt.Text = $fd.SelectedPath
+    }
+  })
+
+  $btnOk = New-Object System.Windows.Forms.Button
+  $btnOk.Text = '开始安装'
+  $btnOk.Location = New-Object System.Drawing.Point(400, 150)
+  $btnOk.Size = New-Object System.Drawing.Size(96, 34)
+  $btnOk.DialogResult = 'OK'
+
+  $btnCancel = New-Object System.Windows.Forms.Button
+  $btnCancel.Text = '取消'
+  $btnCancel.Location = New-Object System.Drawing.Point(508, 150)
+  $btnCancel.Size = New-Object System.Drawing.Size(96, 34)
+  $btnCancel.DialogResult = 'Cancel'
+
+  $null = $form.Controls.Add($lbl)
+  $null = $form.Controls.Add($txt)
+  $null = $form.Controls.Add($btnBrowse)
+  $null = $form.Controls.Add($btnOk)
+  $null = $form.Controls.Add($btnCancel)
+  $form.AcceptButton = $btnOk
+  $form.CancelButton = $btnCancel
+  $form.Add_Shown({ $txt.SelectAll(); $txt.Focus() })
+
+  if ($form.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    $path = $txt.Text.Trim()
+    if ($path -ne '') {
+      try {
+        $full = [System.IO.Path]::GetFullPath($path).TrimEnd('\')
+        if ([System.IO.Path]::IsPathRooted($full)) { return $full }
+      } catch {}
+    }
+  }
+  return $null
+}
+
 # ---------- 主流程 ----------
 try {
+  # 0) 选择安装目录（默认 %LOCALAPPDATA%\博客管家，可修改；选完重算所有派生路径）
+  if (-not $TestMode) {
+    $picked = Get-InstallDir -Default $Install
+    if (-not $picked) {
+      Log '用户取消安装'
+      exit 0
+    }
+    if ($picked -ne $Install) {
+      $Install = $picked
+      $SiteDir  = Join-Path $Install 'site'
+      $PhpDir   = Join-Path $Install 'php'
+      $GitDir   = Join-Path $Install 'git'
+      $GitExe   = Join-Path $GitDir 'cmd\git.exe'
+      $PhpExe   = Join-Path $PhpDir 'php.exe'
+      $DeskDir  = Join-Path $SiteDir 'desktop'
+      $LogFile  = Join-Path $Install 'install.log'
+    }
+  } else {
+    Log '测试模式：使用默认安装目录'
+  }
   Log '========== 博客管家 安装开始 =========='
+  Log "安装目录：$Install"
   New-Item -ItemType Directory -Force $Install | Out-Null
 
   # 1) PHP 运行时
@@ -156,24 +244,50 @@ try {
   }
   Log '站点内容已同步到最新'
 
-  # 4) GitHub 登录（发布用）
+  # 4) GitHub 登录（发布用）：同一台电脑重装时，若已存凭据仍有效则跳过，不再反复询问
+  $credFile = Join-Path $env:USERPROFILE '.git-credentials'
+  $creds = $null
   if (-not $TestMode) {
-    $creds = Get-GitCreds
-    if ($creds) {
-      $credFile = Join-Path $env:USERPROFILE '.git-credentials'
-      $keep = @()
-      if (Test-Path $credFile) { $keep = @(Get-Content -LiteralPath $credFile | Where-Object { $_ -notmatch '@github\.com' }) }
-      @($keep) + "https://$($creds.User):$($creds.Pat)@github.com" |
-        Set-Content -LiteralPath $credFile -Encoding ASCII
-      Run-Capture $GitExe @('config', 'credential.helper', 'store') $SiteDir | Out-Null
-      Run-Capture $GitExe @('config', 'user.name', $creds.User) $SiteDir | Out-Null
-      Run-Capture $GitExe @('config', 'user.email', "$($creds.User)@users.noreply.github.com") $SiteDir | Out-Null
-      Log 'GitHub 凭据已保存（发布将全自动）'
-    } else {
-      Log '已跳过 GitHub 登录（之后发布前需重新运行安装包补齐令牌）'
+    # 读已保存的凭据行：https://USER:PAT@github.com
+    $existing = @()
+    if (Test-Path $credFile) {
+      $existing = @(Get-Content -LiteralPath $credFile | Where-Object { $_ -match '^https?://[^:@]+:[^@]*@github\.com' })
+    }
+    if ($existing.Count -gt 0) {
+      $m = [regex]::Match($existing[0], '^https?://([^:@]+):([^@]*)@github\.com')
+      if ($m.Success) {
+        $tokUser = $m.Groups[1].Value
+        $tokPat  = $m.Groups[2].Value
+        try {
+          $resp = Invoke-WebRequest -Uri 'https://api.github.com/user' `
+            -Headers @{ Authorization = "token $tokPat" } `
+            -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+          if ($resp.StatusCode -eq 200) {
+            $creds = [pscustomobject]@{ User = $tokUser; Pat = $tokPat }
+            Log "检测到已保存且有效的 GitHub 凭据（$tokUser），跳过登录"
+          }
+        } catch {
+          Log '已保存的 GitHub 凭据已失效，需重新输入'
+        }
+      }
+    }
+    if (-not $creds) {
+      $creds = Get-GitCreds   # 没有可用凭据才弹表单
     }
   } else {
     Log '测试模式：跳过 GitHub 登录'
+  }
+  if ($creds) {
+    $keep = @()
+    if (Test-Path $credFile) { $keep = @(Get-Content -LiteralPath $credFile | Where-Object { $_ -notmatch '@github\.com' }) }
+    @($keep) + "https://$($creds.User):$($creds.Pat)@github.com" |
+      Set-Content -LiteralPath $credFile -Encoding ASCII
+    Run-Capture $GitExe @('config', 'credential.helper', 'store') $SiteDir | Out-Null
+    Run-Capture $GitExe @('config', 'user.name', $creds.User) $SiteDir | Out-Null
+    Run-Capture $GitExe @('config', 'user.email', "$($creds.User)@users.noreply.github.com") $SiteDir | Out-Null
+    Log 'GitHub 凭据已保存（发布将全自动）'
+  } else {
+    Log '已跳过 GitHub 登录（之后发布前需重新运行安装包补齐令牌）'
   }
 
   # 5) config.json

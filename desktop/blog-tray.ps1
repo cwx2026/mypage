@@ -108,20 +108,51 @@ function Get-PortListening([int]$port) {
   return [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
 }
 
+function Get-ListeningPid([int]$port) {
+  $c = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($c) { return [int]$c.OwningProcess }
+  return 0
+}
+
+function Test-OwnServer([int]$port) {
+  # 判断占用端口的进程是不是本站的 PHP 服务（按 php.exe 路径比对）
+  $lp = Get-ListeningPid $port
+  if ($lp -le 0) { return $null }
+  try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$lp" -ErrorAction Stop).CommandLine } catch { return $null }
+  if (-not $cmd) { return $null }
+  $cmdNorm = ($cmd -replace '\\', '/')
+  $phpNorm = (($script:Cfg.phpPath -replace '\\', '/').TrimEnd('/'))
+  return [bool]($cmdNorm -like "*$phpNorm*")
+}
+
 function Ensure-PhpServer {
   $port = [int]$script:Cfg.port
   if (-not (Test-Path -LiteralPath $script:Cfg.siteDir)) {
     Show-Tip "站点目录不存在：$($script:Cfg.siteDir)" ([System.Windows.Forms.ToolTipIcon]::Error)
     return $false
   }
-  # 已有服务在响应 → 复用，不重复启动
+  # 端口已有服务在响应 → 先确认是不是本站的 PHP 服务，是才复用；不是就明确提示，避免静默显示旧站
   try {
     $r = Invoke-WebRequest -Uri "http://127.0.0.1:$port/" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
-    if ($r.StatusCode -eq 200) { Write-Log "端口 $port 已有博客服务，直接复用"; return $true }
+    if ($r.StatusCode -eq 200) {
+      $mine = Test-OwnServer $port
+      if ($mine -eq $true) {
+        Write-Log "端口 $port 已有本站 PHP 服务，直接复用"
+        return $true
+      }
+      if ($mine -eq $false) {
+        Write-Log "端口 $port 被其他站点/旧安装占用（非本站目录），浏览器显示的可能是旧站"
+        Show-Tip "端口 $port 被其他站点或旧安装占用，浏览器显示的可能是旧站。`n请先退出旧托盘、或停掉旧服务的 PHP 进程（任务管理器），再重新打开本站。" ([System.Windows.Forms.ToolTipIcon]::Warning)
+        return $false
+      }
+      Write-Log "端口 $port 有服务响应（无法确认是否本站），直接复用"
+      return $true
+    }
   } catch {}
   if (Get-PortListening $port) {
-    Write-Log "端口 $port 被占用（可能为其他程序），不再启动"
-    return $true
+    Write-Log "端口 $port 被其他程序占用（非博客服务），本站无法启动"
+    Show-Tip "端口 $port 被其他程序占用，本站无法启动。请先释放该端口。" ([System.Windows.Forms.ToolTipIcon]::Error)
+    return $false
   }
   if (-not (Test-Path -LiteralPath $script:Cfg.phpPath)) {
     Show-Tip "未找到 PHP：$($script:Cfg.phpPath)，请修改 desktop\config.json" ([System.Windows.Forms.ToolTipIcon]::Error)
@@ -234,6 +265,33 @@ function Set-AutoStart([bool]$on) {
   }
 }
 
+# ---------- 卸载 ----------
+function Uninstall-BlogManager {
+  $installRoot = Split-Path -Parent $script:Cfg.siteDir
+  $msg = "确定卸载「博客管家」吗？`n`n将停止本站服务，并删除：`n  $installRoot`n（含 PHP、git、站点内容 site\）`n以及桌面快捷方式、开机自启。`n`n已发布到 GitHub 的内容不受影响；仅本机未发布的改动会丢失。`nGitHub 令牌保留在 %USERPROFILE%\.git-credentials，如需移除请自行删除该文件。"
+  $r = [System.Windows.Forms.MessageBox]::Show($msg, '卸载博客管家', [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question, [System.Windows.Forms.MessageBoxDefaultButton]::Button2)
+  if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+  # 1) 停止本站 PHP 服务（含“复用”情形：按端口 + php 路径定位后停掉）
+  $lp = Get-ListeningPid $script:Cfg.port
+  if ($lp -gt 0) {
+    try {
+      $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$lp" -ErrorAction Stop).CommandLine
+      if ($cmd -and ($cmd -replace '\\', '/') -like "*$(($script:Cfg.phpPath -replace '\\', '/').TrimEnd('/'))*") {
+        Stop-Process -Id $lp -Force -ErrorAction SilentlyContinue
+      }
+    } catch {}
+  }
+  Stop-PhpServer
+  # 2) 删除快捷方式：桌面 + 开机启动
+  foreach ($lnk in @((Join-Path ([Environment]::GetFolderPath('Desktop')) '博客管家.lnk'), (Get-StartupLnk))) {
+    if (Test-Path -LiteralPath $lnk) { Remove-Item -LiteralPath $lnk -Force -ErrorAction SilentlyContinue }
+  }
+  # 3) 延时删除安装目录（cmd 在临时目录运行，等本进程退出后再删，避免占用自身目录）
+  Start-Process cmd.exe -ArgumentList '/c', ("timeout /t 3 /nobreak >nul & rmdir /s /q `"{0}`"" -f $installRoot) -WindowStyle Hidden -WorkingDirectory $env:TEMP
+  Write-Log "已启动卸载，删除目录：$installRoot"
+  [System.Windows.Forms.Application]::Exit()
+}
+
 # ---------- 配置 ----------
 $script:Cfg = Load-Config
 
@@ -286,6 +344,7 @@ $miPull    = New-Object System.Windows.Forms.ToolStripMenuItem('从 GitHub 拉�
 $miDir     = New-Object System.Windows.Forms.ToolStripMenuItem('打开站点目录')
 $miAuto    = New-Object System.Windows.Forms.ToolStripMenuItem('开机自启')
 $miExit    = New-Object System.Windows.Forms.ToolStripMenuItem('退出')
+$miUninst  = New-Object System.Windows.Forms.ToolStripMenuItem('卸载博客管家…')
 
 $miSite.Add_Click({ Open-Url "http://127.0.0.1:$($script:Cfg.port)/" })
 $miAdmin.Add_Click({ Open-Url "http://127.0.0.1:$($script:Cfg.port)/admin.php" })
@@ -295,11 +354,16 @@ $miBuild.Add_Click({
 })
 $miPublish.Add_Click({ Invoke-Publish })
 $miPull.Add_Click({ Invoke-Pull })
-$miDir.Add_Click({ Start-Process 'explorer.exe' -ArgumentList $script:Cfg.siteDir })
+$miDir.Add_Click({
+  # explorer 不认正斜杠路径（/ 会被当作开关解析而退回到“文档”），转反斜杠并加引号
+  $dir = ($script:Cfg.siteDir -replace '/', '\')
+  Start-Process 'explorer.exe' -ArgumentList "`"$dir`""
+})
 $miAuto.CheckOnClick = $true
 $miAuto.Checked = (Test-AutoStart)
 $miAuto.Add_Click({ Set-AutoStart ([bool]$miAuto.Checked) })
 $miExit.Add_Click({ [System.Windows.Forms.Application]::Exit() })
+$miUninst.Add_Click({ Uninstall-BlogManager })
 
 $null = $menu.Items.Add($miSite)
 $null = $menu.Items.Add($miAdmin)
@@ -311,6 +375,7 @@ $null = $menu.Items.Add('-')
 $null = $menu.Items.Add($miDir)
 $null = $menu.Items.Add($miAuto)
 $null = $menu.Items.Add('-')
+$null = $menu.Items.Add($miUninst)
 $null = $menu.Items.Add($miExit)
 
 $script:notifyIcon.ContextMenuStrip = $menu
