@@ -73,5 +73,5 @@ desktop/
   启动博客.cmd      桌面入口
   config.json       配置（phpPath / siteDir / port / autoBuild / autoPush / gitPath）— 本机生成，不入库
   blog-tray.log     运行日志（自动生成）
-  installer/        一键安装包制作脚本（setup.ps1 / blog-installer.sed / build-installer.ps1）
+  installer/        一键安装包制作脚本（setup.ps1 / build-installer.ps1）
 ```
